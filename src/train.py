@@ -9,22 +9,33 @@ import mlflow
 import mlflow.pytorch
 
 
-# =========================
-# 1. Définition du modèle
-# =========================
+# ============================================================
+# 1. PARAMÈTRES DE L'EXPÉRIENCE
+# ============================================================
+
+learning_rate = 0.001
+batch_size = 64
+epochs = 5
+hidden_neurons = 256
+
+# ============================================================
+# 2. MODÈLE
+# ============================================================
 
 class NeuralNetwork(nn.Module):
 
-    def __init__(self):
+    def __init__(self, hidden_neurons=128):
         super().__init__()
 
         self.flatten = nn.Flatten()
 
         self.network = nn.Sequential(
-            nn.Linear(28 * 28, 128),
+            nn.Linear(28 * 28, hidden_neurons),
             nn.ReLU(),
-            nn.Linear(128, 64),
+
+            nn.Linear(hidden_neurons, 64),
             nn.ReLU(),
+
             nn.Linear(64, 10)
         )
 
@@ -33,9 +44,9 @@ class NeuralNetwork(nn.Module):
         return self.network(x)
 
 
-# =========================
-# 2. Préparation des données
-# =========================
+# ============================================================
+# 3. PRÉPARATION DES DONNÉES
+# ============================================================
 
 transform = transforms.ToTensor()
 
@@ -53,31 +64,23 @@ test_dataset = datasets.FashionMNIST(
     download=True
 )
 
+
 train_loader = DataLoader(
     train_dataset,
-    batch_size=64,
+    batch_size=batch_size,
     shuffle=True
 )
 
 test_loader = DataLoader(
     test_dataset,
-    batch_size=64,
+    batch_size=batch_size,
     shuffle=False
 )
 
 
-# =========================
-# 3. Paramètres
-# =========================
-
-learning_rate = 0.001
-batch_size = 128
-epochs = 5
-
-
-# =========================
-# 4. Device
-# =========================
+# ============================================================
+# 4. DEVICE
+# ============================================================
 
 device = (
     "mps"
@@ -90,22 +93,22 @@ device = (
 print("Device:", device)
 
 
-# =========================
-# 5. Expérience MLflow
-# =========================
+# ============================================================
+# 5. EXPÉRIENCE MLFLOW
+# ============================================================
 
 mlflow.set_experiment("Fashion-MNIST")
 
 
-# =========================
-# 6. Run MLflow
-# =========================
+# ============================================================
+# 6. RUN MLFLOW
+# ============================================================
 
 with mlflow.start_run():
 
-    # =========================
-    # Enregistrement paramètres
-    # =========================
+    # --------------------------------------------------------
+    # Enregistrement des paramètres
+    # --------------------------------------------------------
 
     mlflow.log_param(
         "learning_rate",
@@ -122,14 +125,31 @@ with mlflow.start_run():
         epochs
     )
 
+    mlflow.log_param(
+        "hidden_neurons",
+        hidden_neurons
+    )
 
-    # =========================
+
+    # --------------------------------------------------------
     # Création du modèle
-    # =========================
+    # --------------------------------------------------------
 
-    model = NeuralNetwork().to(device)
+    model = NeuralNetwork(
+        hidden_neurons=hidden_neurons
+    ).to(device)
+
+
+    # --------------------------------------------------------
+    # Loss
+    # --------------------------------------------------------
 
     criterion = nn.CrossEntropyLoss()
+
+
+    # --------------------------------------------------------
+    # Optimizer
+    # --------------------------------------------------------
 
     optimizer = optim.Adam(
         model.parameters(),
@@ -137,9 +157,9 @@ with mlflow.start_run():
     )
 
 
-    # =========================
-    # Entraînement
-    # =========================
+    # ========================================================
+    # 7. ENTRAÎNEMENT
+    # ========================================================
 
     for epoch in range(epochs):
 
@@ -149,22 +169,32 @@ with mlflow.start_run():
 
         for images, labels in train_loader:
 
+            # Envoyer les données sur le device
             images = images.to(device)
             labels = labels.to(device)
 
+            # Réinitialiser les gradients
             optimizer.zero_grad()
 
+            # Prédiction
             outputs = model(images)
 
+            # Calcul de la loss
             loss = criterion(outputs, labels)
 
+            # Backpropagation
             loss.backward()
 
+            # Mise à jour des poids
             optimizer.step()
 
+            # Accumuler la loss
             total_loss += loss.item()
 
+
+        # Loss moyenne de l'epoch
         average_loss = total_loss / len(train_loader)
+
 
         print(
             f"Epoch {epoch + 1}/{epochs} - "
@@ -172,10 +202,9 @@ with mlflow.start_run():
         )
 
 
-        # =========================
-        # ÉTAPE 12
-        # Enregistrement de la Loss
-        # =========================
+        # ----------------------------------------------------
+        # ÉTAPE 12 — Enregistrement de la Loss
+        # ----------------------------------------------------
 
         mlflow.log_metric(
             "train_loss",
@@ -184,9 +213,9 @@ with mlflow.start_run():
         )
 
 
-    # =========================
-    # Évaluation
-    # =========================
+    # ========================================================
+    # 8. ÉVALUATION
+    # ========================================================
 
     model.eval()
 
@@ -200,26 +229,32 @@ with mlflow.start_run():
             images = images.to(device)
             labels = labels.to(device)
 
+            # Prédiction
             outputs = model(images)
 
             predictions = outputs.argmax(dim=1)
 
+            # Nombre total d'images
             total += labels.size(0)
 
+            # Nombre de bonnes prédictions
             correct += (
                 predictions == labels
             ).sum().item()
 
 
+    # Calcul de l'accuracy
     accuracy = correct / total
 
-    print(f"Accuracy : {accuracy:.4f}")
+
+    print(
+        f"Accuracy : {accuracy:.4f}"
+    )
 
 
-    # =========================
-    # ÉTAPE 13
-    # Enregistrement Accuracy
-    # =========================
+    # --------------------------------------------------------
+    # ÉTAPE 13 — Enregistrement de l'Accuracy
+    # --------------------------------------------------------
 
     mlflow.log_metric(
         "test_accuracy",
@@ -227,16 +262,43 @@ with mlflow.start_run():
     )
 
 
-    # =========================
-    # ÉTAPE 14
-    # Enregistrement du modèle
-    # =========================
+    # ========================================================
+    # 9. ENREGISTREMENT DU MODÈLE
+    # ========================================================
+
+    # Exemple d'entrée nécessaire pour MLflow
+    example_input = torch.randn(
+        1,
+        1,
+        28,
+        28
+    ).to(device)
+
+
+    # --------------------------------------------------------
+    # ÉTAPE 14 — Enregistrement du modèle
+    # --------------------------------------------------------
 
     mlflow.pytorch.log_model(
         model,
-        name="model"
+        name="model",
+        input_example=example_input
     )
 
 
-print("Entraînement terminé.")
+    # ========================================================
+    # 10. INFORMATIONS DU RUN
+    # ========================================================
 
+    run = mlflow.active_run()
+
+    print()
+    print("====================================")
+    print("MLflow Run terminé")
+    print("Run ID:", run.info.run_id)
+    print("Accuracy:", accuracy)
+    print("====================================")
+
+
+print()
+print("Entraînement terminé.")
